@@ -1,34 +1,71 @@
 """
 Quantum Computing Lab
-First quantum circuit with Qiskit.
+Bell state simulation with Qiskit.
 """
 
 from qiskit import QuantumCircuit
+from qiskit.primitives import StatevectorSampler
 
 
 def create_bell_circuit():
     """
     Create a Bell state using two qubits.
-
-    |00> → H → CX → Bell state
     """
 
     circuit = QuantumCircuit(2)
 
-    # Put the first qubit into superposition
+    # Create superposition
     circuit.h(0)
 
-    # Entangle the two qubits
+    # Create entanglement
     circuit.cx(0, 1)
+
+    # Measure both qubits
+    circuit.measure_all()
 
     return circuit
 
 
-if __name__ == "__main__":
+def run_bell_experiment(shots=1024):
+    """
+    Run the Bell state experiment.
+
+    Expected results:
+    00 ≈ 50%
+    11 ≈ 50%
+    """
 
     circuit = create_bell_circuit()
 
-    print("Qiskit Quantum Circuit")
-    print("----------------------")
+    sampler = StatevectorSampler()
 
+    job = sampler.run([circuit], shots=shots)
+
+    result = job.result()
+
+    counts = result[0].data.meas.get_counts()
+
+    return counts
+
+
+if __name__ == "__main__":
+
+    print("Qiskit Bell State Experiment")
+    print("============================")
+
+    circuit = create_bell_circuit()
+
+    print()
+    print("Bell Circuit:")
     print(circuit)
+
+    print()
+
+    counts = run_bell_experiment()
+
+    print("Measurement Results:")
+    print(counts)
+
+    print()
+    print("Expected:")
+    print("00 ≈ 50%")
