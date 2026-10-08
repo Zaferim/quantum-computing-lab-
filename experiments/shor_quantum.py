@@ -9,6 +9,7 @@ Stages:
 2. Controlled modular exponentiation.
 3. Apply inverse QFT.
 4. Inspect period-finding peaks.
+5. Extract the period automatically.
 """
 
 import numpy as np
@@ -38,16 +39,7 @@ def inverse_qft(
     for i in range(n // 2):
         circuit.swap(qubits[i], qubits[n - i - 1])
 
-    # Exact inverse of the corrected QFT:
-    # QFT:
-    #   j = n-1 ... 0
-    #   H(j)
-    #   CP(k, j)
-    #
-    # Therefore the inverse runs:
-    #   j = 0 ... n-1
-    #   CP(-angle)
-    #   H(j)
+    # Exact inverse of the corrected QFT.
     for j in range(n):
         for k in range(j):
             angle = -np.pi / (2 ** (j - k))
@@ -75,8 +67,8 @@ def build_shor_period_circuit() -> QuantumCircuit:
         build_controlled_modular_exponentiation()
     )
 
-    # Remove the X gate that prepares |1> because
-    # the main circuit already prepared it.
+    # Remove the X gate that prepares |1>
+    # because the main circuit already prepared it.
     modular_circuit.data.pop(0)
 
     circuit.compose(
@@ -94,25 +86,74 @@ def build_shor_period_circuit() -> QuantumCircuit:
     return circuit
 
 
-def verify_period_finding_state(
+def get_input_probabilities(
     circuit: QuantumCircuit,
-) -> None:
-    """Verify that inverse QFT produces period-related peaks."""
+) -> np.ndarray:
+    """Return probabilities for the input register."""
 
     state = Statevector.from_instruction(circuit)
 
     probabilities = np.abs(state.data) ** 2
 
-    input_probabilities = np.zeros(2 ** INPUT_QUBITS)
+    input_probabilities = np.zeros(
+        2 ** INPUT_QUBITS
+    )
 
     for index, probability in enumerate(probabilities):
         input_value = index & 0b1111
         input_probabilities[input_value] += probability
 
-    print("Input-register probabilities after inverse QFT:")
+    return input_probabilities
+
+
+def extract_period_from_probabilities(
+    input_probabilities: np.ndarray,
+) -> int:
+    """Extract the period from ideal period-finding peaks."""
+
+    peaks = [
+        i
+        for i, probability in enumerate(input_probabilities)
+        if probability > 0.24
+    ]
+
+    if len(peaks) < 2:
+        raise ValueError(
+            "Not enough period-finding peaks detected."
+        )
+
+    differences = [
+        peaks[i + 1] - peaks[i]
+        for i in range(len(peaks) - 1)
+    ]
+
+    period = min(differences)
+
+    if period <= 0:
+        raise ValueError(
+            "Invalid period candidate."
+        )
+
+    return period
+
+
+def verify_period_finding_state(
+    circuit: QuantumCircuit,
+) -> None:
+    """Verify that inverse QFT produces period-related peaks."""
+
+    input_probabilities = get_input_probabilities(
+        circuit
+    )
+
+    print(
+        "Input-register probabilities after inverse QFT:"
+    )
     print()
 
-    for x, probability in enumerate(input_probabilities):
+    for x, probability in enumerate(
+        input_probabilities
+    ):
         if probability > 1e-9:
             print(
                 f"x={x:2d} | probability={probability:.6f}"
@@ -136,14 +177,23 @@ def verify_period_finding_state(
         1.0,
     )
 
+    period = extract_period_from_probabilities(
+        input_probabilities
+    )
+
+    assert period == 4
+
     print()
     print("✓ Period-finding peaks verified.")
     print("✓ Peaks occur at 0, 4, 8 and 12.")
+    print("✓ Extracted period r = 4.")
     print("✓ Total probability = 1.0")
 
 
 def main() -> None:
-    print("Shor's Algorithm - Quantum Period Finding")
+    print(
+        "Shor's Algorithm - Quantum Period Finding"
+    )
     print("------------------------------------------")
     print(f"N = {N}")
     print(f"a = {A}")
@@ -151,10 +201,11 @@ def main() -> None:
 
     circuit = build_shor_period_circuit()
 
-    print("Complete quantum period-finding circuit:")
+    print(
+        "Complete quantum period-finding circuit:"
+    )
     print()
     print(circuit)
-
     print()
 
     verify_period_finding_state(circuit)
