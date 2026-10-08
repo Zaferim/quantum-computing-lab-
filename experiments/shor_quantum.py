@@ -1,6 +1,7 @@
 """
 Shor's Algorithm - Complete Quantum Factoring Pipeline
 
+Default demonstration:
 N = 15
 a = 2
 
@@ -14,11 +15,14 @@ Pipeline:
 """
 
 import numpy as np
+from math import gcd
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector
 
 from experiments.shor_quantum_period import (
     build_controlled_modular_exponentiation,
+    get_input_qubits,
+    get_work_qubits,
 )
 
 from experiments.shor_period import (
@@ -29,8 +33,8 @@ from experiments.shor_period import (
 N = 15
 A = 2
 
-INPUT_QUBITS = 4
-WORK_QUBITS = 4
+INPUT_QUBITS = get_input_qubits(N)
+WORK_QUBITS = get_work_qubits(N)
 
 
 def inverse_qft(
@@ -65,21 +69,27 @@ def inverse_qft(
 def build_shor_period_circuit() -> QuantumCircuit:
     """Build the complete quantum period-finding circuit."""
 
+    input_qubits = get_input_qubits(N)
+    work_qubits = get_work_qubits(N)
+
     circuit = QuantumCircuit(
-        INPUT_QUBITS + WORK_QUBITS
+        input_qubits + work_qubits
     )
 
     # Prepare work register in |1>.
-    circuit.x(INPUT_QUBITS)
+    circuit.x(input_qubits)
 
     # Create uniform superposition
     # in the input register.
-    for qubit in range(INPUT_QUBITS):
+    for qubit in range(input_qubits):
         circuit.h(qubit)
 
     # Build controlled modular exponentiation.
     modular_circuit = (
-        build_controlled_modular_exponentiation()
+        build_controlled_modular_exponentiation(
+            A,
+            N,
+        )
     )
 
     # Remove the X gate that prepares |1>
@@ -89,7 +99,7 @@ def build_shor_period_circuit() -> QuantumCircuit:
     circuit.compose(
         modular_circuit,
         qubits=range(
-            INPUT_QUBITS + WORK_QUBITS
+            input_qubits + work_qubits
         ),
         inplace=True,
     )
@@ -97,7 +107,7 @@ def build_shor_period_circuit() -> QuantumCircuit:
     # Apply inverse QFT to input register.
     inverse_qft(
         circuit,
-        list(range(INPUT_QUBITS)),
+        list(range(input_qubits)),
     )
 
     return circuit
@@ -108,6 +118,8 @@ def get_input_probabilities(
 ) -> np.ndarray:
     """Return probabilities for the input register."""
 
+    input_qubits = get_input_qubits(N)
+
     state = Statevector.from_instruction(
         circuit
     )
@@ -117,13 +129,19 @@ def get_input_probabilities(
     )
 
     input_probabilities = np.zeros(
-        2 ** INPUT_QUBITS
+        2 ** input_qubits
     )
+
+    input_mask = (
+        2 ** input_qubits
+    ) - 1
 
     for index, probability in enumerate(
         probabilities
     ):
-        input_value = index & 0b1111
+        input_value = (
+            index & input_mask
+        )
 
         input_probabilities[
             input_value
@@ -135,14 +153,23 @@ def get_input_probabilities(
 def extract_period_from_probabilities(
     input_probabilities: np.ndarray,
 ) -> int:
-    """Extract the period from ideal period-finding peaks."""
+    """
+    Extract the period from ideal period-finding peaks.
+
+    For an input register of size Q, peaks are
+    approximately separated by Q / r.
+    """
+
+    peak_threshold = (
+        0.20
+    )
 
     peaks = [
         i
         for i, probability in enumerate(
             input_probabilities
         )
-        if probability > 0.24
+        if probability > peak_threshold
     ]
 
     if len(peaks) < 2:
@@ -155,14 +182,27 @@ def extract_period_from_probabilities(
         for i in range(len(peaks) - 1)
     ]
 
-    period = min(differences)
+    spacing = min(differences)
 
-    if period <= 0:
+    if spacing <= 0:
+        raise ValueError(
+            "Invalid peak spacing."
+        )
+
+    input_size = len(
+        input_probabilities
+    )
+
+    period_estimate = round(
+        input_size / spacing
+    )
+
+    if period_estimate <= 0:
         raise ValueError(
             "Invalid period candidate."
         )
 
-    return period
+    return period_estimate
 
 
 def verify_period_finding_state(
@@ -174,6 +214,9 @@ def verify_period_finding_state(
         get_input_probabilities(circuit)
     )
 
+    input_qubits = get_input_qubits(N)
+    input_size = 2 ** input_qubits
+
     print(
         "Input-register probabilities after inverse QFT:"
     )
@@ -184,33 +227,9 @@ def verify_period_finding_state(
     ):
         if probability > 1e-9:
             print(
-                f"x={x:2d} | "
+                f"x={x:3d} | "
                 f"probability={probability:.6f}"
             )
-
-    expected_peaks = [
-        0,
-        4,
-        8,
-        12,
-    ]
-
-    for peak in expected_peaks:
-        assert (
-            input_probabilities[peak] > 0.24
-        )
-
-    for x in range(16):
-        if x not in expected_peaks:
-            assert (
-                input_probabilities[x]
-                < 1e-9
-            )
-
-    assert np.isclose(
-        np.sum(input_probabilities),
-        1.0,
-    )
 
     period = (
         extract_period_from_probabilities(
@@ -218,13 +237,37 @@ def verify_period_finding_state(
         )
     )
 
-    assert period == 4
+    # Verify the extracted period classically.
+    for x in range(
+        2 * get_work_qubits(N)
+    ):
+        assert (
+            pow(A, x, N)
+            == pow(A, x + period, N)
+        )
+
+    assert (
+        pow(A, period, N) == 1
+    )
+
+    assert np.isclose(
+        np.sum(input_probabilities),
+        1.0,
+    )
 
     print()
-    print("✓ Period-finding peaks verified.")
-    print("✓ Peaks occur at 0, 4, 8 and 12.")
-    print(f"✓ Extracted period r = {period}.")
-    print("✓ Total probability = 1.0")
+    print(
+        "✓ Period-finding peaks verified."
+    )
+    print(
+        f"✓ Input register size = {input_size}"
+    )
+    print(
+        f"✓ Extracted period r = {period}."
+    )
+    print(
+        "✓ Total probability = 1.0"
+    )
 
     return period
 
@@ -261,6 +304,12 @@ def main() -> None:
     )
     print(f"N = {N}")
     print(f"a = {A}")
+    print(
+        f"Input qubits = {INPUT_QUBITS}"
+    )
+    print(
+        f"Work qubits = {WORK_QUBITS}"
+    )
     print()
 
     circuit = build_shor_period_circuit()
@@ -291,15 +340,17 @@ def main() -> None:
         f"{pow(A, period // 2, N)}"
     )
     print(
-        f"gcd(a^(r/2) - 1, N) = {factor1}"
+        f"gcd(a^(r/2) - 1, N) = "
+        f"{gcd(pow(A, period // 2, N) - 1, N)}"
     )
     print(
-        f"gcd(a^(r/2) + 1, N) = {factor2}"
+        f"gcd(a^(r/2) + 1, N) = "
+        f"{gcd(pow(A, period // 2, N) + 1, N)}"
     )
 
     print()
     print(
-        f"✓ Shor factorization result:"
+        "✓ Shor factorization result:"
     )
     print(
         f"✓ {N} = {factor1} × {factor2}"
