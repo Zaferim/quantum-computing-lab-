@@ -13,19 +13,18 @@ N_QUBITS = 4
 
 def qft(circuit: QuantumCircuit, qubits: list[int]) -> None:
     """Apply the Quantum Fourier Transform."""
+
     n = len(qubits)
 
-    for j in range(n):
+    for j in reversed(range(n)):
         circuit.h(qubits[j])
 
-        for k in range(j + 1, n):
-            angle = np.pi / (2 ** (k - j))
+        for k in reversed(range(j)):
+            angle = np.pi / (2 ** (j - k))
             circuit.cp(angle, qubits[k], qubits[j])
 
-    # Reverse qubit order
     for i in range(n // 2):
         circuit.swap(qubits[i], qubits[n - i - 1])
-
 
 def main() -> None:
     circuit = QuantumCircuit(N_QUBITS)
