@@ -6,6 +6,7 @@ Period extraction is heuristic and will be improved later
 with continued fractions and measurement sampling.
 """
 
+from fractions import Fraction
 from math import gcd
 
 import numpy as np
@@ -131,73 +132,110 @@ def get_input_probabilities(
     return input_probabilities
 
 
+
+def continued_fraction_period_candidates(
+    measurement: int,
+    register_size: int,
+    a: int,
+    N: int,
+) -> list[int]:
+    """Generate verified period candidates from continued-fraction convergents."""
+
+    validate_inputs(a, N)
+
+    if not isinstance(measurement, int) or isinstance(measurement, bool):
+        raise ValueError("Measurement must be an integer.")
+
+    if not isinstance(register_size, int) or isinstance(register_size, bool):
+        raise ValueError("Register size must be an integer.")
+
+    if register_size <= 0:
+        raise ValueError("Register size must be positive.")
+
+    if not 0 <= measurement < register_size:
+        raise ValueError("Measurement must be within the register range.")
+
+    numerator = measurement
+    denominator = register_size
+    partial_quotients = []
+
+    while denominator:
+        quotient, remainder = divmod(numerator, denominator)
+        partial_quotients.append(quotient)
+        numerator, denominator = denominator, remainder
+
+    p_prev2, p_prev1 = 0, 1
+    q_prev2, q_prev1 = 1, 0
+    candidates = set()
+
+    for term in partial_quotients:
+        p = term * p_prev1 + p_prev2
+        q = term * q_prev1 + q_prev2
+
+        if 1 < q <= N and pow(a, q, N) == 1:
+            candidates.add(reduce_period(a, N, q))
+
+        p_prev2, p_prev1 = p_prev1, p
+        q_prev2, q_prev1 = q_prev1, q
+
+    return sorted(candidates)
+
+
 def extract_period_from_probabilities(
     probabilities: np.ndarray,
     a: int,
     N: int,
 ) -> int:
-    """
-    Estimate the period from prominent probability peaks.
-
-    This is a heuristic. It is not a replacement for continued
-    fractions and measurement-based post-processing.
-    """
+    """Estimate a verified period using continued fractions and peak spacing."""
 
     validate_inputs(a, N)
 
-    probabilities = np.asarray(probabilities, dtype=float)
+    if not isinstance(probabilities, np.ndarray) or probabilities.ndim != 1:
+        raise ValueError("Probabilities must be a one-dimensional NumPy array.")
 
-    if probabilities.ndim != 1 or len(probabilities) == 0:
-        raise ValueError(
-            "A non-empty one-dimensional probability array is required."
-        )
+    if len(probabilities) == 0:
+        raise ValueError("Probabilities cannot be empty.")
 
-    if not np.all(np.isfinite(probabilities)):
-        raise ValueError("Probabilities must contain only finite values.")
-
-    if np.any(probabilities < 0):
-        raise ValueError("Probabilities cannot be negative.")
-
-    total_probability = float(np.sum(probabilities))
-
-    if total_probability <= 0:
-        raise ValueError("The total probability must be positive.")
-
-    probabilities = probabilities / total_probability
-
-    max_probability = float(np.max(probabilities))
-
-    if max_probability <= 0:
-        raise ValueError("No probability peaks were found.")
-
-    threshold = max_probability * 0.10
-    peak_indices = np.flatnonzero(probabilities >= threshold)
-
-    if len(peak_indices) < 2:
-        raise ValueError(
-            "Not enough significant peaks to estimate a period."
-        )
+    if not np.all(np.isfinite(probabilities)) or np.any(probabilities < 0):
+        raise ValueError("Probabilities must be finite and non-negative.")
 
     register_size = len(probabilities)
+    peak_threshold = max(float(np.max(probabilities)) * 0.1, 1e-12)
+    peaks = np.flatnonzero(probabilities >= peak_threshold)
+
+    # First try continued-fraction candidates from the most likely measurements.
+    continued_fraction_candidates = set()
+
+    for measurement in peaks:
+        try:
+            candidates = continued_fraction_period_candidates(
+                int(measurement), register_size, a, N
+            )
+            continued_fraction_candidates.update(candidates)
+        except ValueError:
+            continue
+
+    if continued_fraction_candidates:
+        return min(continued_fraction_candidates)
+
+    # Fall back to the existing peak-spacing heuristic.
+    if len(peaks) < 2:
+        raise ValueError(
+            "Not enough probability peaks to estimate a period."
+        )
+
+    spacings = np.diff(peaks)
     candidates = set()
 
-    # Estimate candidate periods from distances between peaks.
-    for i in range(len(peak_indices)):
-        for j in range(i + 1, len(peak_indices)):
-            spacing = int(peak_indices[j] - peak_indices[i])
+    for spacing in spacings:
+        if spacing <= 0:
+            continue
 
-            if spacing <= 0:
-                continue
+        estimate = round(register_size / int(spacing))
 
-            estimate = round(register_size / spacing)
+        if estimate > 0:
+            candidates.add(estimate)
 
-            if estimate > 0:
-                candidates.add(estimate)
-
-    if not candidates:
-        raise ValueError("No period candidate could be estimated.")
-
-    # Verify candidates against the supplied base.
     valid_candidates = sorted(
         candidate
         for candidate in candidates
@@ -208,8 +246,7 @@ def extract_period_from_probabilities(
         return valid_candidates[0]
 
     raise ValueError(
-        "The probability peaks did not produce a verified period. "
-        "Continued-fraction post-processing may be needed."
+        "The probability peaks did not produce a verified period."
     )
 
 
