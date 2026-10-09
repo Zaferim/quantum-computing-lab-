@@ -217,3 +217,99 @@ def test_modular_multiplication_rejects_non_coprime_values(
 ):
     with pytest.raises(ValueError):
         modular_multiplication_matrix(multiplier, modulus)
+
+
+from qiskit.quantum_info import Statevector
+from experiments.shor_quantum_period import (
+    build_controlled_modular_exponentiation,
+)
+
+
+@pytest.mark.parametrize(
+    ("a", "n", "control_value", "work_value", "expected_work"),
+    [
+        (2, 15, 0, 1, 1),
+        (2, 15, 1, 1, 2),
+        (2, 15, 1, 2, 4),
+        (2, 15, 1, 4, 8),
+        (2, 15, 1, 8, 1),
+        (2, 21, 1, 1, 2),
+        (2, 21, 1, 2, 4),
+        (5, 21, 1, 1, 5),
+    ],
+)
+def test_controlled_modular_exponentiation_basis_states(
+    a, n, control_value, work_value, expected_work
+):
+    circuit = build_controlled_modular_exponentiation(a, n)
+    input_qubits = get_input_qubits(n)
+    work_qubits = get_work_qubits(n)
+
+    # Test the first control qubit and initialize all other qubits to zero.
+    basis_index = (
+        control_value
+        + (work_value << input_qubits)
+    )
+
+    initial_state = Statevector.from_int(
+        basis_index,
+        dims=[2] * circuit.num_qubits,
+    )
+    final_state = initial_state.evolve(circuit)
+
+    probabilities = final_state.probabilities()
+    measured_index = int(np.argmax(probabilities))
+
+    expected_index = (
+        control_value
+        + (expected_work << input_qubits)
+    )
+
+    assert probabilities[measured_index] == pytest.approx(1.0)
+    assert measured_index == expected_index
+
+
+
+from qiskit.quantum_info import Statevector
+from experiments.shor_quantum_period import (
+    build_controlled_modular_exponentiation,
+)
+
+
+@pytest.mark.parametrize(
+    ("a", "n", "control_qubit"),
+    [
+        (2, 15, 0),
+        (2, 15, 1),
+        (2, 15, 2),
+        (2, 15, 3),
+        (2, 21, 0),
+        (2, 21, 1),
+        (5, 21, 0),
+        (5, 21, 1),
+    ],
+)
+def test_controlled_modular_exponentiation_basis_states(
+    a, n, control_qubit
+):
+    circuit = build_controlled_modular_exponentiation(a, n)
+    input_qubits = get_input_qubits(n)
+
+    # Activate only the selected control qubit.
+    # The circuit itself prepares the work register in |1>.
+    input_index = 1 << control_qubit
+
+    initial_state = Statevector.from_int(
+        input_index,
+        dims=[2] * circuit.num_qubits,
+    )
+    final_state = initial_state.evolve(circuit)
+
+    probabilities = final_state.probabilities()
+    measured_index = int(np.argmax(probabilities))
+
+    expected_work = pow(a, 1 << control_qubit, n)
+    expected_index = input_index + (expected_work << input_qubits)
+
+    assert probabilities[measured_index] == pytest.approx(1.0)
+    assert measured_index == expected_index
