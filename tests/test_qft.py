@@ -45,3 +45,31 @@ def test_qft_followed_by_inverse_restores_initial_state():
     ) ** 2
 
     assert np.isclose(fidelity, 1.0, atol=1e-10)
+
+
+import pytest
+
+
+@pytest.mark.parametrize("input_value", [0, 2, 7, 15])
+def test_qft_matches_expected_fourier_state_for_multiple_inputs(input_value):
+    circuit = QuantumCircuit(N_QUBITS)
+
+    for qubit in range(N_QUBITS):
+        if (input_value >> qubit) & 1:
+            circuit.x(qubit)
+
+    qft(circuit, list(range(N_QUBITS)))
+
+    actual = Statevector.from_instruction(circuit).data
+
+    size = 2**N_QUBITS
+    expected = np.array(
+        [
+            np.exp(2j * np.pi * input_value * k / size) / np.sqrt(size)
+            for k in range(size)
+        ]
+    )
+
+    fidelity = abs(np.vdot(expected, actual)) ** 2
+
+    assert np.isclose(fidelity, 1.0, atol=1e-10)
