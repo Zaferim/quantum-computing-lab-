@@ -89,3 +89,85 @@ def test_verify_classical_period_accepts_valid_period():
 def test_modular_multiplication_rejects_non_coprime_multiplier():
     with pytest.raises(ValueError):
         modular_multiplication_matrix(3, 15)
+
+import numpy as np
+
+from experiments.shor_quantum_general import (
+    extract_period_from_probabilities,
+)
+
+
+@pytest.mark.parametrize(
+    ("period", "expected"),
+    [
+        (4, 4),
+        (8, 4),
+        (12, 4),
+        (16, 4),
+    ],
+)
+def test_reduce_period_finds_smallest_period(period, expected):
+    assert reduce_period(2, 15, period) == expected
+
+
+@pytest.mark.parametrize(
+    "period",
+    [0, -4, 3, 4.0, True],
+)
+def test_reduce_period_rejects_invalid_periods(period):
+    with pytest.raises(ValueError):
+        reduce_period(2, 15, period)
+
+
+def test_extract_period_from_valid_probability_distribution():
+    probabilities = np.zeros(256)
+    probabilities[[0, 64, 128, 192]] = 0.25
+
+    period = extract_period_from_probabilities(
+        probabilities,
+        2,
+        15,
+    )
+
+    assert period == 4
+    assert pow(2, period, 15) == 1
+
+
+@pytest.mark.parametrize(
+    "probabilities",
+    [
+        np.array([]),
+        np.array([[0.5, 0.5]]),
+        np.array([0.5, -0.1, 0.6]),
+        np.array([0.5, np.nan, 0.5]),
+        np.array([0.5, np.inf, 0.5]),
+    ],
+)
+def test_extract_period_rejects_invalid_probabilities(probabilities):
+    with pytest.raises(ValueError):
+        extract_period_from_probabilities(
+            probabilities,
+            2,
+            15,
+        )
+
+
+def test_extract_period_rejects_non_array_input():
+    with pytest.raises(ValueError):
+        extract_period_from_probabilities(
+            [0.25, 0.25, 0.25, 0.25],
+            2,
+            15,
+        )
+
+
+def test_extract_period_rejects_insufficient_peaks():
+    probabilities = np.zeros(256)
+    probabilities[0] = 1.0
+
+    with pytest.raises(ValueError, match="Not enough probability peaks"):
+        extract_period_from_probabilities(
+            probabilities,
+            2,
+            15,
+        )
