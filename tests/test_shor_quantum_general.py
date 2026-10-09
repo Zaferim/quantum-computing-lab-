@@ -171,3 +171,49 @@ def test_extract_period_rejects_insufficient_peaks():
             2,
             15,
         )
+
+
+@pytest.mark.parametrize(
+    ("multiplier", "modulus"),
+    [(2, 15), (7, 15), (2, 21), (5, 21)],
+)
+def test_modular_multiplication_maps_basis_states(multiplier, modulus):
+    matrix = modular_multiplication_matrix(multiplier, modulus)
+    dimension = 1 << get_work_qubits(modulus)
+
+    assert matrix.shape == (dimension, dimension)
+
+    for value in range(modulus):
+        expected = (multiplier * value) % modulus
+        actual = int(np.argmax(matrix[:, value]))
+        assert actual == expected
+
+
+@pytest.mark.parametrize(
+    ("multiplier", "modulus"),
+    [(2, 15), (2, 21)],
+)
+def test_modular_multiplication_preserves_out_of_range_states(
+    multiplier, modulus
+):
+    matrix = modular_multiplication_matrix(multiplier, modulus)
+    dimension = 1 << get_work_qubits(modulus)
+
+    for value in range(modulus, dimension):
+        assert int(np.argmax(matrix[:, value])) == value
+
+
+def test_modular_multiplication_matrix_is_read_only():
+    matrix = modular_multiplication_matrix(2, 15)
+    assert not matrix.flags.writeable
+
+
+@pytest.mark.parametrize(
+    ("multiplier", "modulus"),
+    [(3, 15), (5, 15), (7, 21)],
+)
+def test_modular_multiplication_rejects_non_coprime_values(
+    multiplier, modulus
+):
+    with pytest.raises(ValueError):
+        modular_multiplication_matrix(multiplier, modulus)
