@@ -3,6 +3,7 @@ import pytest
 from quantum.environmental_noise import (
     EnvironmentalConditions,
     estimate_environmental_noise,
+    resonance_factor,
 )
 
 
@@ -105,3 +106,51 @@ def test_custom_weights_change_estimate():
     stronger = estimate_environmental_noise(conditions, weights=weights)
 
     assert stronger.probability > normal.probability
+
+
+def test_resonance_is_highest_near_natural_frequency():
+    natural_frequency = 100.0
+    damping = 0.1
+
+    at_resonance = resonance_factor(
+        natural_frequency,
+        natural_frequency,
+        damping,
+    )
+    far_from_resonance = resonance_factor(
+        200.0,
+        natural_frequency,
+        damping,
+    )
+
+    assert at_resonance > far_from_resonance
+    assert at_resonance == pytest.approx(5.0)
+
+
+def test_higher_damping_reduces_resonance_peak():
+    low_damping = resonance_factor(100.0, 100.0, 0.1)
+    high_damping = resonance_factor(100.0, 100.0, 0.5)
+
+    assert low_damping > high_damping
+
+
+@pytest.mark.parametrize(
+    "frequency,natural_frequency,damping",
+    [
+        (-1.0, 100.0, 0.1),
+        (100.0, 0.0, 0.1),
+        (100.0, 100.0, 0.0),
+    ],
+)
+def test_invalid_resonance_parameters_are_rejected(
+    frequency,
+    natural_frequency,
+    damping,
+):
+    with pytest.raises(ValueError):
+        resonance_factor(frequency, natural_frequency, damping)
+
+
+def test_resonance_rejects_non_numeric_parameters():
+    with pytest.raises(TypeError):
+        resonance_factor("100", 100.0, 0.1)
