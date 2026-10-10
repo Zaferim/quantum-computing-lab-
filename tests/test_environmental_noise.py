@@ -154,3 +154,36 @@ def test_invalid_resonance_parameters_are_rejected(
 def test_resonance_rejects_non_numeric_parameters():
     with pytest.raises(TypeError):
         resonance_factor("100", 100.0, 0.1)
+
+def test_higher_damping_reduces_vibration_noise():
+    base_conditions = {
+        "vibration_amplitude": 0.5,
+        "vibration_duration": 1.0,
+        "vibration_frequency_hz": 100.0,
+        "vibration_natural_frequency_hz": 100.0,
+    }
+
+    low_damping = estimate_environmental_noise(
+        EnvironmentalConditions(
+            **base_conditions,
+            vibration_damping_ratio=0.05,
+        )
+    )
+    medium_damping = estimate_environmental_noise(
+        EnvironmentalConditions(
+            **base_conditions,
+            vibration_damping_ratio=0.10,
+        )
+    )
+    high_damping = estimate_environmental_noise(
+        EnvironmentalConditions(
+            **base_conditions,
+            vibration_damping_ratio=0.20,
+        )
+    )
+
+    assert (
+        low_damping.probability
+        > medium_damping.probability
+        > high_damping.probability
+    )

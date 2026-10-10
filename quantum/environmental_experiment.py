@@ -44,6 +44,43 @@ def run_environmental_experiment(
     )
 
 
+
+def run_vibration_frequency_sweep(
+    frequencies_hz: tuple[float, ...] = (
+        20, 50, 80, 90, 100, 110, 120, 150, 200
+    ),
+    *,
+    amplitude: float = 0.5,
+    duration: float = 1.0,
+    natural_frequency_hz: float = 100.0,
+    damping_ratio: float = 0.1,
+    trials: int = 5_000,
+    seed: int = 42,
+) -> tuple[EnvironmentalExperimentResult, ...]:
+    """Compare simulated noise and error correction across vibration frequencies."""
+
+    if not frequencies_hz:
+        raise ValueError("frequencies_hz must not be empty")
+
+    results = []
+    for frequency_hz in frequencies_hz:
+        conditions = EnvironmentalConditions(
+            vibration_amplitude=amplitude,
+            vibration_duration=duration,
+            vibration_frequency_hz=frequency_hz,
+            vibration_natural_frequency_hz=natural_frequency_hz,
+            vibration_damping_ratio=damping_ratio,
+        )
+        results.append(
+            run_environmental_experiment(
+                conditions,
+                trials=trials,
+                seed=seed,
+            )
+        )
+
+    return tuple(results)
+
 def main() -> None:
     """Run a comparison across illustrative environmental scenarios."""
 
